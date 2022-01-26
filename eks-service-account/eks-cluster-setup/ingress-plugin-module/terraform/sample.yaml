@@ -1,0 +1,26 @@
+kind: Pod
+apiVersion: v1
+metadata:
+  name: sample-app
+  namespace: ingress-nginx
+  labels:
+    app: sample
+spec:
+  containers:
+    - name: sample-app
+      image: 957826089764.dkr.ecr.eu-central-1.amazonaws.com/eks-service-account-ecr:sample-app
+      args:
+        - "-text=sample"
+
+---
+
+kind: Service
+apiVersion: v1
+metadata:
+  name: service
+  namespace: ingress-nginx
+spec:
+  selector:
+    app: sample
+  ports:
+    - port: 5678 # Default port for image

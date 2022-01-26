@@ -1,0 +1,28 @@
+{
+    "Version": "2012-10-17",
+    "Statement": [
+      {
+        "Effect": "Allow",
+        "Action": [
+          "s3:ListBucket"
+        ],
+        "Resource": "arn:aws:s3:::${bucket-name}"
+      },
+      {
+        "Effect": "Allow",
+        "Action": [
+          "s3:PutObject",
+          "s3:GetObject",
+          "s3:ListObjects"
+        ],
+        "Resource": "arn:aws:s3:::${bucket-name}/*"
+      },
+      {
+        "Effect": "Allow",
+        "Action": [
+          "s3:PutObjectAcl"
+        ],
+        "Resource": "*"
+      }
+    ]
+  }
