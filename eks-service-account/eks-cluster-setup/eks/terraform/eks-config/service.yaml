@@ -1,0 +1,27 @@
+cluster-name: private-service-cluster
+
+control-plane:
+  version: 1.19
+
+central-key: true
+
+internet-ingress: true
+
+nodegroups:
+  main-ngrps:
+    name: main-ngrps
+    desired-size: 1
+    instance-type: t3.medium
+    k8s-labels:
+      node-group-name: main-ngrps
+    max-size: 3
+    min-size: 1
+
+control-plane-allowed-cidrs:
+  global: 0.0.0.0/0
+
+versions:
+  1.16: 1.16.15-20210310
+  1.17: 1.17.12-20210322
+  1.18: 1.18.9-20210414
+  1.19: 1.19.6-20210526
