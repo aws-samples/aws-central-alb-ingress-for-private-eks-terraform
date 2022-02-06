@@ -1,3 +1,12 @@
+resource "aws_s3_bucket" "alb_access_log" {
+  bucket = var.access_logs_bucket
+  acl = "private"
+  tags = {
+    Name = "alb_access_log"
+  }
+}
+
+
 resource "aws_lb" "internet-ingress-alb" {
   name                       = "internet-ingress-alb"
   internal                   = false
@@ -5,6 +14,12 @@ resource "aws_lb" "internet-ingress-alb" {
   security_groups            = [aws_security_group.internet-ingress-alb-sg.id]
   subnets                    = var.public_ingress_subnet_ids
   enable_deletion_protection = false
+
+  access_logs {
+    bucket = aws_s3_bucket.alb_access_log.id
+    prefix = "internet-ingress-alb"
+    enabled = true
+  }
 
   tags = {
     Name       = "internet-ingress-alb"

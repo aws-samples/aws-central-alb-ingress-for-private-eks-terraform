@@ -13,3 +13,8 @@ variable "s3_state_bucket" {
   default = "central-internet-acc"
   description = "Name of s3 state bucket created with the s3_state_bukcet.sh"
 }
+
+variable "access_logs_bucket" {
+  type = string
+  default = "internet-ingress-alb-access-logs"
+}
