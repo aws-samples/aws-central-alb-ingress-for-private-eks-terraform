@@ -30,7 +30,7 @@ resource "aws_vpc_endpoint_service" "nginx-ingress-public" {
   provider                   = aws.network-role
   acceptance_required        = false
   network_load_balancer_arns = [data.aws_lb.nlb.arn]
-  allowed_principals = ["arn:aws:iam::182804580567:role/network-role"]
+  allowed_principals = ["arn:aws:iam::<aws-account-id>:role/network-role"]
 
   tags = {
     Name       = "nginx-ingress-public"

@@ -6,6 +6,24 @@ resource "aws_wafv2_web_acl" "internet-ingress-alb" {
   default_action {
     allow {}
   }
+  rule {
+    name = "AWS-AWSManagedRulesKnownBadInputsRuleSet"
+    priority = 1
+    override_action {
+      none {}
+    }
+    statement {
+      managed_rule_group_statement {
+        name = "AWSManagedRulesKnownBadInputsRuleSet"
+        vendor_name = "AWS"
+      }
+    }
+    visibility_config {
+      cloudwatch_metrics_enabled = false
+      metric_name = "AWS-AWSManagedRulesKnownBadInputsRuleSet"
+      sampled_requests_enabled = false
+    }
+  }
 
   rule {
     name     = "AWS-AWSManagedRulesCommonRuleSet"
@@ -41,9 +59,9 @@ resource "aws_wafv2_web_acl" "internet-ingress-alb" {
   }
 
   visibility_config {
-    cloudwatch_metrics_enabled = true
+    cloudwatch_metrics_enabled = false
     metric_name                = "AWS-AWSManagedRulesCommonRuleSet"
-    sampled_requests_enabled   = true
+    sampled_requests_enabled   = false
   }
 }
 

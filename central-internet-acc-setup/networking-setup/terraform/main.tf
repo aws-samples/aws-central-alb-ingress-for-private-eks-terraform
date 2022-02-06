@@ -29,6 +29,7 @@ module "alb" {
   source = "./modules/load-balancer"
   vpc_id = module.vpc.vpc_id
   public_ingress_subnet_ids = module.vpc.public_ingress_subnet_ids
+  access_logs_bucket = var.access_logs_bucket
 }
 
 data "aws_ssm_parameter" "endpointservice" {
