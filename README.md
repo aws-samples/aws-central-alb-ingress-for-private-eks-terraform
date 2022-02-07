@@ -1,51 +1,21 @@
 ## Central Application Loadbalancer Ingress for private EKS VPCs Terraform
 
-This repository contains Terraform code implementation of a centralized internet ingress setup for EKS services hosted in private/separate AWS accounts with no public link (IGW/NAT) attached.
-
-## Solution overview
-
-We deployed our solution into two VPCs connected using AWS PrivateLink. One VPC hosts the Amazon EKS cluster, and the second hosts the ALB. We refer to these as the “Amazon EKS VPC” and the “internet VPC” respectively.
-
-**Amazon EKS VPC**
-
-We first created the Amazon EKS VPC to host the clusters that run the HTTP services we will access from the internet VPC. Then we deployed an Amazon EKS cluster in front of a Network Load Balancer (NLB) that targets the HTTP services running within the Amazon EKS Cluster. An NGINX ingress controller handles the final routing of traffic to HTTP services within the Amazon EKS cluster.
-
-We define a VPC Endpoint Service (VPCES), powered by PrivateLink, within our Amazon EKS VPC and associated it with our NLB. I reference this VPC Endpoint Service in other VPCs that want to access the services hosted in the Amazon EKS VPC.
-
-**Internet VPC:**
-
-An Application Load Balancer (ALB) manages inbound, internet-based connections to the Amazon EKS service. We deployed the ALB in the internet VPC with internet access through an Internet Gateway attached to the internet VPC. We associated the ALB with an AWS Web Application Firewall (WAF) to help protect our web services against common web exploits and bots.
-
-Using these services, we can centrally manage:
-
-- **Public Listeners/Endpoints (ALB):** Creates the HTTPS endpoints that our internet traffic will connect to.
-
-- **Certificate Management (ALB):** Controls the certificates used to terminate the HTTPS/SSL traffic associated with our listeners.
-
-- **Control Access using Security Groups (ALB):** Use Security Groups on public facing interfaces to control inbound IP traffic.
-
-- **Control WAF Rules and Policies:** Protect web applications against common web exploits and bots that may affect availability, compromise security, or consume excessive resources within our EKS hosting environment.
-
-Next, we configured VPC endpoints (VPCE) within the internet VPC. We mapped these VPC endpoints directly to the VPC Endpoint Service we are hosting in the isolated Amazon EKS VPC. In order to improve service resiliency, we deployed VPC Endpoints across three Availability Zones with one Elastic Network Interface (ENI) placed into each of the Availability Zones. (We followed the approach defined in the AWS whitepaper, Securely Access Services Over AWS PrivateLink.)
-We deployed the ALB with a listener on the public (internet-facing) interface that is configured to receive requests on HTTPS port (port 443). Once it receives traffic, it decrypts the SSL/HTTPS packets using the certificate stored in AWS Certificate Manager. The Web Application Firewall (WAF) associated with our ALB then inspects traffic for any known web exploits and passes approved traffic on for forwarding to the ALB targets. The ALB then uses the ENIs associated with the VPC Endpoint as load-balanced targets for the service defined by the public listener. Traffic that arrives at the VPC Endpoint ENIs is then forwarded to the Amazon EKS VPC, using the PrivateLink service.
-
-
+This repository contains Terraform code implementation of a centralized internet ingress setup for EKS services hosted in private/separate AWS accounts/VPCs with no public link [(IGW/NAT)](https://docs.aws.amazon.com/network-firewall/latest/developerguide/arch-igw-ngw.html) attached.
 
 
 ## Solution diagram and data flow
 
 
-The diagram that follows (figure 1) shows how traffic from the internet flows to the services hosted in the Amazon EKS VPC. following these:
+The diagram that follows shows how traffic from the internet flows to the services hosted in the Amazon EKS VPC. following these:
 
-1.	HTTPS requests coming from the internet are resolved by Amazon Route 53 DNS and then directed to the public address of the ALB.
-2.	The ALB terminates the HTTPS traffic using a certificate managed by AWS Certificate Manager.
-3.	Traffic that is permitted to pass through the ALB is then logged in S3.
-4.	Traffic is then reviewed and screened by the AWS Web Application Firewall (WAF) to catch common security exploits. Assuming the HTTP request is permitted by the WAF, traffic is then routed to the ALB targets (VPC Endpoint ENIs).
+1.	HTTPS requests coming from the internet are resolved by [Amazon Route 53 DNS](https://aws.amazon.com/route53/) and then directed to the public address of the [ALB](https://docs.aws.amazon.com/elasticloadbalancing/latest/application/introduction.html).
+2.	The ALB terminates the HTTPS traffic using a certificate managed by [AWS Certificate Manager](https://aws.amazon.com/certificate-manager/).
+3.	Traffic that is permitted to pass through the ALB is then logged in [S3](https://aws.amazon.com/s3/).
+4.	Traffic is then reviewed and screened by the [AWS Web Application Firewall (WAF)](https://aws.amazon.com/waf/) to catch common security exploits. Assuming the HTTP request is permitted by the WAF, traffic is then routed to the ALB targets (VPC Endpoint ENIs).
 5.	The ALB load balances the traffic against the ENIs defined for the VPC Endpoint.
-6.	Once traffic arrives at the ENIs associated with the VPC Endpoint, the PrivateLink service carries the traffic to the Amazon EKS VPC, where the VPC Endpoint Service maps the traffic to the NLB.
+6.	Once traffic arrives at the ENIs associated with the VPC Endpoint, the [PrivateLink](https://aws.amazon.com/privatelink/?privatelink-blogs.sort-by=item.additionalFields.createdDate&privatelink-blogs.sort-order=desc) service carries the traffic to the Amazon EKS VPC, where the VPC Endpoint Service maps the traffic to the NLB.
 7.	The NLB, with HTTP targets defined in the Amazon EKS cluster, delivers the HTTP traffic to the service hosted on the pods running in the Amazon EKS cluster.
-8.	All ALB and Amazon EKS logs are logged in Amazon CloudWatch.
-
+8.	All ALB and Amazon EKS logs are logged in [Amazon CloudWatch](https://aws.amazon.com/cloudwatch/).
 
 
 ![image](./.docs/central_alb_ingress_eks.jpg)
@@ -97,7 +67,7 @@ The central-internet-acc-setup directory contains the Terraform code for the cen
 
 The eks-service-account directory contains the Terraform code for the EKS VPC.
 
-### Detailed setup
+## Detailed setup
 
 ### Setup eks-service-account
 
@@ -242,7 +212,7 @@ terraform plan
 terraform apply -auto-approve
 ```
 
-### Setup eks-service-account
+### Setup central-internet-account
 
 #### 1. Create terraform state bucket for this account by running this command in terminal:
 
@@ -380,10 +350,6 @@ $ terraform destroy eks-service-account/eks-cluster-setup/eks/terraform -auto-ap
 $ terraform destroy eks-service-account/networking-setup/terraform -auto-approve
 $ terraform destroy eks-service-account/roles/terraform -auto-approve
 ```
-
-
-
-
 
 ## Security
 
