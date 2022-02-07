@@ -1,9 +1,88 @@
 ## Central Application Loadbalancer Ingress for private EKS VPCs Terraform
 
-This repository contains the terraform code implementation of a centralized internet ingress setup for EKS services hosted in private/separate AWS accounts with no public link (IGW/NAT) attached. 
+This repository contains Terraform code implementation of a centralized internet ingress setup for EKS services hosted in private/separate AWS accounts with no public link (IGW/NAT) attached.
 
-### Repository Structure
-The setup is essentially divided into following two parts:
+### Solution overview
+
+We deployed our solution into two VPCs connected using AWS PrivateLink. One VPC hosts the Amazon EKS cluster, and the second hosts the ALB. We refer to these as the “Amazon EKS VPC” and the “internet VPC” respectively.
+
+**Amazon EKS VPC**
+
+We first created the Amazon EKS VPC to host the clusters that run the HTTP services we will access from the internet VPC. Then we deployed an Amazon EKS cluster in front of a Network Load Balancer (NLB) that targets the HTTP services running within the Amazon EKS Cluster. An NGINX ingress controller handles the final routing of traffic to HTTP services within the Amazon EKS cluster.
+
+We define a VPC Endpoint Service (VPCES), powered by PrivateLink, within our Amazon EKS VPC and associated it with our NLB. I reference this VPC Endpoint Service in other VPCs that want to access the services hosted in the Amazon EKS VPC.
+
+**Internet VPC:**
+
+An Application Load Balancer (ALB) manages inbound, internet-based connections to the Amazon EKS service. We deployed the ALB in the internet VPC with internet access through an Internet Gateway attached to the internet VPC. We associated the ALB with an AWS Web Application Firewall (WAF) to help protect our web services against common web exploits and bots.
+
+Using these services, we can centrally manage:
+
+- **Public Listeners/Endpoints (ALB):** Creates the HTTPS endpoints that our internet traffic will connect to.
+
+- **Certificate Management (ALB):** Controls the certificates used to terminate the HTTPS/SSL traffic associated with our listeners.
+
+- **Control Access using Security Groups (ALB):** Use Security Groups on public facing interfaces to control inbound IP traffic.
+
+- **Control WAF Rules and Policies:** Protect web applications against common web exploits and bots that may affect availability, compromise security, or consume excessive resources within our EKS hosting environment.
+
+Next, we configured VPC endpoints (VPCE) within the internet VPC. We mapped these VPC endpoints directly to the VPC Endpoint Service we are hosting in the isolated Amazon EKS VPC. In order to improve service resiliency, we deployed VPC Endpoints across three Availability Zones with one Elastic Network Interface (ENI) placed into each of the Availability Zones. (We followed the approach defined in the AWS whitepaper, Securely Access Services Over AWS PrivateLink.)
+We deployed the ALB with a listener on the public (internet-facing) interface that is configured to receive requests on HTTPS port (port 443). Once it receives traffic, it decrypts the SSL/HTTPS packets using the certificate stored in AWS Certificate Manager. The Web Application Firewall (WAF) associated with our ALB then inspects traffic for any known web exploits and passes approved traffic on for forwarding to the ALB targets. The ALB then uses the ENIs associated with the VPC Endpoint as load-balanced targets for the service defined by the public listener. Traffic that arrives at the VPC Endpoint ENIs is then forwarded to the Amazon EKS VPC, using the PrivateLink service.
+
+
+
+
+### Solution diagram and data flow
+
+
+The diagram that follows (figure 1) shows how traffic from the internet flows to the services hosted in the Amazon EKS VPC. following these:
+
+1.	HTTPS requests coming from the internet are resolved by Amazon Route 53 DNS and then directed to the public address of the ALB.
+2.	The ALB terminates the HTTPS traffic using a certificate managed by AWS Certificate Manager.
+3.	Traffic that is permitted to pass through the ALB is then logged in S3.
+4.	Traffic is then reviewed and screened by the AWS Web Application Firewall (WAF) to catch common security exploits. Assuming the HTTP request is permitted by the WAF, traffic is then routed to the ALB targets (VPC Endpoint ENIs).
+5.	The ALB load balances the traffic against the ENIs defined for the VPC Endpoint.
+6.	Once traffic arrives at the ENIs associated with the VPC Endpoint, the PrivateLink service carries the traffic to the Amazon EKS VPC, where the VPC Endpoint Service maps the traffic to the NLB.
+7.	The NLB, with HTTP targets defined in the Amazon EKS cluster, delivers the HTTP traffic to the service hosted on the pods running in the Amazon EKS cluster.
+8.	All ALB and Amazon EKS logs are logged in Amazon CloudWatch.
+
+
+![Figure1: Diagram of our solution and data flow](./.docs/img.png)
+
+**Benefits:**
+
+- This solution separates duties between 1) the governance of the ALB security, certificate management, and integration with WAF services in the internet VPC, and 2), application management in the Amazon EKS VPC.
+- Application teams in the Amazon EKS VPCs keep their services isolated inside their VPC until they are configured the PrivateLink service and given access external parties.
+- With one centrally-managed internet VPC, it is simpler to perform security audits on inbound internet access.
+- Network access between all VPCs is controlled by a single networking approach using PrivateLink.
+
+### Solution Concerns:
+
+- While this solution is beneficial for connecting multiple workload VPCs to a central inbound internet solution, it  becomes difficult to manage at scale. This is because configuring new services and connecting additional Amazon EKS VPCs requires additional IP space within the internet VPC.
+
+- By default, the quota for VPC Endpoints defined within a VPC is 50 (you can increase this quota with a service quota increase request). Alternatively, we could create another internet VPC along with another ALB to shard some of the inbound traffic and mitigate the concerns of the VPC Endpoint limits.
+
+### Walk-through
+
+*Pre-requisites*
+
+1. For this solution, we require access to at least one AWS account
+2. We based the codebase for this solution on [Terraform version >= 12](https://learn.hashicorp.com/tutorials/terraform/install-cli)
+3. The codebase for this solution requires the [aws cli v2](https://docs.aws.amazon.com/cli/latest/userguide/install-cliv2.html)
+4. Before starting a Terraform, double-check that the AWS provider role definitions and the correct AWS account ID are properly configured
+5. AWS cli profiles setup: https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-profiles.html
+   for eks-service-account: we use default cli profile. Whereas for central-internet-account: we use profile name: central-acc
+   the cli creds file should look like this:
+
+![pic1](./.docs/cli-profiles.png)
+
+
+### Repository structure
+
+As a starting point, download the contents of this GitHub repository.
+
+A description of the structure of the code follows:
+
 
 ```bash
 .
@@ -12,98 +91,27 @@ The setup is essentially divided into following two parts:
 |-- eks-service-account
 
 ```
-### 1. Central Internet Account Setup
+The central-internet-acc-setup directory contains the Terraform code for the central Internet VPC.
 
-This account will spin up following resources:
+The eks-service-account directory contains the Terraform code for the EKS VPC.
 
-1. VPC with Internet Gateway
-2. Application Load Balancer
-3. WAF with managed AWS rules
-4. VPC Endpoints destined for private link with EKS service Accounts
+### Detailed setup
 
-### 2. EKS Service Account
+### Setup eks-service-account
 
-This account will spin up following resources:
+Follow the following set of steps in order to set up eks-service-account:
 
-1. VPC (without IGW or NATGW)
-2. A private EKS cluster with managed worker nodes
-3. Nginx ingress plugin simple configuration
-4. VPC endpoint service that automatically accepts the endpoint created in the Central Internet Account Setup
-5. A sample app/service exposed via Private Link over the internet (to be decided)
-
-### Architecture
-
-The following architecture diagram simplifies the proposed solution. 
-
-![pic1](./.docs/Internet-Ingress-artifact-v1.jpg)
-
-AWS Services Involved: 
-
-1.	Route53 (Public hosted Zone with records pointing to ALB cname).
-2.	ACM (Publicly signed certificate either imported or requested via certificate manager).
-3.	VPC (for networking layer and public and private subnets) in the internet account.
-4.	Application Load Balancer with listener rule configured to forward requests based on host-header.
-5.	S3 for ALB access logs
-6.	VPC interface endpoint in internet account and VPCES in the spoke accounts (Private Link).
-7.	ALB Target Groups (one for each spoke) with 3x eni IPs registered as targets for the respective VPC endpoint(s).
-8.	Security Groups (ALB and VPCE level) allowing specific inbound traffic to flow.
-9.	AWS WAF Web ACL with AWS Managed Core Rule Set (to protect against common attacks).
-10.	VPC Endpoint Services deployed in each spoke account with Network Load Balancer.
-11.	One Nginx ingress controller for each of the spoke account(s) in the EKS plane.
-12.	Cloudwatch for monitoring
-
-### Prerequisites
-
-The following prerequisites are necessary in order to run the example.
-
-- [Terraform version >= 12](https://learn.hashicorp.com/tutorials/terraform/install-cli)
-- [aws cli v2](https://docs.aws.amazon.com/cli/latest/userguide/install-cliv2.html)
-- Also before executing the terraform, aws provider role definitions and correct aws account ids needs to be checked.
-- 2 AWS accounts (1. eks-service-account and 2. central-internet-acc)
-- 2 AWS cli profiles setup: https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-profiles.html
-  for eks-service-account: we use default cli profile
-  for central-internet-account: we use profile name: central-acc
-  the cli creds file should look like this:
-
-![pic1](./.docs/cli-profiles.png)
-
-
-## `/eks-service-account` - Account 1
-  
-
-### Directory Structure
-
-```bash
-$ cd eks-service-account
-```
-
-```bash
-|-- eks-service-account
-    |-- eks-cluster-setup
-        |-- eks
-            |-- terraform
-        |-- ingress-plugin-module
-            |-- terraform
-    |-- networking-setup
-        |-- terraform
-    |-- roles
-        |-- terraform
-|-- s3_state_buckets.sh
-```
-
-#### Installation Steps
-
-### 1. Create terraform state bucket for this account by executing the following command in terminal. The s3 bucket-name used in the code base is `eks-service-account`
+#### 1. Create terraform state bucket for this account by executing the following command in terminal. The s3 bucket-name used in the code base is `eks-service-account`
 
 ```bash
 $ cd eks-service-account
 $ sh s3_state_buckets.sh <S3_BUCKET_NAME_as_input>  <REGION_as_input>  default
 ```
 
-### 2. Update the s3 bucket name created in the above step to terraform backends (terraform/backend.tf) for roles, networking-setup and eks-cluster-setup directories 
+#### 2. Update the s3 bucket name created in the above step 1 to terraform backends (terraform/backend.tf) for roles, networking-setup and eks-cluster-setup directories
 
 roles/terraform/backend.tf
-```
+```terraform
 terraform {
   backend "s3" {
     bucket     = "<eks-service-account-bucket-name>" 
@@ -114,7 +122,7 @@ terraform {
 ```
 
 networking-setup/terraform/backend.tf
-```
+```terraform
 terraform {
   backend "s3" {
     bucket     = "<eks-service-account-bucket-name>" 
@@ -125,7 +133,7 @@ terraform {
 ```
 
 eks-cluster-setup/eks/terraform/backend.tf
-```
+```terraform
 terraform {
   backend "s3" {
     bucket     = "<eks-service-account-bucket-name>" 
@@ -136,7 +144,7 @@ terraform {
 ```
 
 eks-cluster-setup/ingress-plugin-module/terraform/backend.tf
-```
+```terraform
 terraform {
   backend "s3" {
     bucket     = "<eks-service-account-bucket-name>" 
@@ -146,12 +154,12 @@ terraform {
 }
 ```
 
-### 3. Create IAM Roles
+#### 3. Create IAM Roles
 
-This step will create following IAM roles with required permissions:
+Create the following IAM roles with required permissions:
 
-- network-role 
-- iam-full-access 
+- network-role
+- iam-full-access
 - ecr-full-access
 - eks-role
 
@@ -163,9 +171,9 @@ $ cd roles/terraform
 
 ```
 
-### 4. Networking Setup
+#### 4. Networking setup
 
-This step will create following resources:
+Create the following resources:
 
 - VPC (default cidr: 10.11.0.0/16)
 - 3 completely private subnets (one in each Availability Zone with no NAT/IGW connectivity)
@@ -180,9 +188,9 @@ $ cd networking-setup/terraform
 
 ```
 
-### 4. Uploading the Nginx ingress to the ECR repository
+#### 5. Upload the Nginx ingress to the ECR repository
 
-Since the EKS dataplane will have no internet link/connectivity, therefore we will have to push the docker image of Nginx ingress controller in the private ECR repository
+Since the EKS dataplane has no internet link/connectivity, you must push the docker image of the Nginx ingress controller in the private ECR repository
 
 - Pull the Nginx ingress controller image
 ```bash
@@ -190,13 +198,13 @@ Since the EKS dataplane will have no internet link/connectivity, therefore we wi
 $ docker pull k8s.gcr.io/ingress-nginx/controller:v0.46.0@sha256:52f0058bed0a17ab0fb35628ba97e8d52b5d32299fbc03cc0f6c7b9ff036b61a
 ```
 
-- List images to note the IMAGE ID of the downloaded image
+- List images and note the IMAGE ID of the downloaded image
 ```bash
 $ docker images
 ``` 
 
-- Tag docker image. Please replace the <IMAGE-ID> and <your-aws-account-id> in the following command with correct values.
-```bash 
+- Tag docker image. Replace the <IMAGE-ID> and <your-aws-account-id> in the following command with correct values.
+```shell 
 $ docker tag <IMAGE-ID> <your-aws-account-id>.dkr.ecr.eu-central-1.amazonaws.com/eks-service-account-ecr
 ```
 
@@ -207,9 +215,9 @@ $ docker push <your-aws-account-id>.dkr.ecr.eu-central-1.amazonaws.com/eks-servi
 ````
 
 
-### 5. EKS Cluster Setup
+#### 6. EKS Cluster Setup
 
-This step will create following resources
+This step creates:
 
 - EKS cluster control plane
 - EKS cluster data plane with managed worker nodes
@@ -223,7 +231,7 @@ $ cd eks-cluster-setup/eks/terraform
   terraform apply -auto-approve
 ```
 
-### 6. Deploy nginx-ingress-controller
+#### 7. Deploy nginx-ingress-controller
 
 ```bash
 $ cd eks-cluster-setup/ingress-plugin-module/terraform
@@ -232,36 +240,20 @@ terraform plan
 terraform apply -auto-approve
 ```
 
+### Setup eks-service-account
 
-## `/central-internet-acc-setup` - Account 2
-
-### Directory Structure
-
-```bash
-$ cd central-internet-account-setup
-```
-
-```bash
-|-- central-internet-account-setup
-    |-- networking-setup
-        |-- terraform
-    |-- roles
-        |-- terraform
-|-- s3_state_buckets.sh
-```
-
-### 1. Create terraform state bucket for this account by executing the following command in terminal.
+#### 1. Create terraform state bucket for this account by running this command in terminal:
 
 ```bash
 $ cd central-internet-account-setup
 $ sh s3_state_buckets.sh <S3_BUCKET_NAME_as_input>  <REGION_as_input>  central-acc
 ```
 
-### 2. Update the s3 bucket name created in the above step to terraform backends (terraform/backend.tf) for roles, networking-setup and eks-cluster-setup directories
+#### 2. Update the s3 bucket name created in the preceding step to Terraform backends (terraform/backend.tf) for roles, networking-setup directories
 
 roles/terraform/backend.tf
 
-```
+```terraform
 terraform {
   backend "s3" {
     bucket     = "<eks-service-account-bucket-name>" 
@@ -273,7 +265,7 @@ terraform {
 
 networking-setup/terraform/backend.tf
 
-```
+```terraform
 terraform {
   backend "s3" {
     bucket     = "<eks-service-account-bucket-name>" 
@@ -283,23 +275,113 @@ terraform {
 }
 ```
 
-### 3. Networking Setup
+#### 3. Networking Setup
 
 This step will create following resources:
 
 - VPC (default cidr: 10.12.0.0/16)
 - 3 completely private subnets - for vpc endpoint
-- 3 public subnets for application loadbalancer that would serve as an entry point for traffic  
+- 3 public subnets for application loadbalancer that would serve as an entry point for traffic
 - 1 VPC Interface Endpoint which will make a connection with VPCES created in the eks-service account
 - WAF
-- NLB target groups pointing to VPC endpoint private ENI IPs. 
+- NLB target groups pointing to VPC endpoint private ENI IPs.
 
-```bash
+```shell
 $ cd networking-setup/terraform
   terraform init
   terraform plan
   terraform apply -auto-approve
 ```
+### Adding a new VPC Connection/Account
+
+In order to connect additional VPCs to the centralized internet-ingress account, the eks-service-account code is replicated/extended to provision the additional subscriber VPC or AWS accounts. During the creation of the VPC Endpoint Service in the eks-service-account, you must define a unique name for each service that is referenced in the centralized internet-ingress account, in order to create the associated VPC endpoints.
+We use the VPC Endpoint Service names and AWS Systems Manager Parameter Store to share the centralized internet-ingress account. Parameter Store elements can be secrets or plain-text values you reference in your scripts, commands, SSM documents, configurations, and automation workflows by using the unique name that you specified when you created the parameter. In our case, as part of ingress-plugin-module setup in eks-service-account, the VPC endpoint service name is automatically deployed to the central-account’s Parameter Store, which is then consumed by central-account-setup natively using terraform at the time of each endpoint creation.
+The Parameter Store name must be unique, so that for every new VPC endpoint, terraform automation does not override a previously deployed or active VPC endpoint service. In our scenario, this is handled by a Terraform variable called connection_name.  Hence, for every additional eks-service-account setup, the connection_name variable has to be unique.
+
+- The connection_name variable is handled in the file: eks-service-account/eks-cluster-setup/ingress-plugin-module/nginx.tf:
+
+```hcl
+
+resource "aws_ssm_parameter" "vpces-service-name" {
+provider = aws.central-acc
+name = "vpces-service-name-${var.connection_name}"
+type = "String"
+value = aws_vpc_endpoint_service.nginx-ingress-public.service_name
+depends_on = [aws_vpc_endpoint_service.nginx-ingress-public]
+overwrite = true
+}
+
+```
+
+- When you add a new connection, declare a new endpoint module and target group reference in the central-internet-account-setup/networking-setup/terraform/main.tf:
+
+```hcl
+module "endpoint-new" {
+providers = {
+aws.network-role = aws.network-role
+}
+source = "./modules/endpoints"
+vpc_id = module.vpc.vpc_id
+public-ingress-subnet-cidrs = module.vpc.public_ingress_subnet_cidrs
+private-endpoint-subnet-ids = module.vpc.private_endpoint_subnet_ids
+endpoint_service_name = data.aws_ssm_parameter.endpointservice-new.value
+
+}
+
+module "target-group" {
+providers = {
+aws.network-role = aws.network-role
+}
+source = "./modules/target-group"
+name   = "internet-ingress-new"
+vpc_id = module.vpc.vpc_id
+listener_arn = module.alb.alb_https_listener_arn
+team_endpoint_private_ips = toset(module.endpoint.eni_ips)
+}
+
+```
+
+
+- To deploy the new configuration, run the following Terraform:
+
+```shell
+
+$ terraform plan central-internet-account-setup/networking-setup/terraform/ -auto-approve
+
+$ terraform apply central-internet-account-setup/networking-setup/terraform/ -auto-approve
+
+```
+
+### Cleaning up
+
+When finished, you can clean up your account by following these steps in order:
+
+1.	Switch to this working directory:
+
+```shell
+$ cd central-eks-internet-ingress
+```
+
+2.	Clean up central internet account services
+
+```shell
+
+$ terraform destroy central-internet-account-setup/networking-setup/terraform -auto-approve
+$ terraform destroy central-internet-account-setup/roles/terraform -auto-approve
+```
+
+3.	Clean up the EKS service account services:
+
+```shell
+$ terraform destroy eks-service-account/eks-cluster-setup/ingress-plugin-module/terraform -auto-approve
+$ terraform destroy eks-service-account/eks-cluster-setup/eks/terraform -auto-approve
+$ terraform destroy eks-service-account/networking-setup/terraform -auto-approve
+$ terraform destroy eks-service-account/roles/terraform -auto-approve
+```
+
+
+
+
 
 ## Security
 
