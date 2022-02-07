@@ -1,21 +1,21 @@
 ## Central Application Loadbalancer Ingress for private EKS VPCs Terraform
 
-This repository contains Terraform code implementation of a centralized internet ingress setup for EKS services hosted in private/separate AWS accounts with no public link (IGW/NAT) attached.
+This repository contains Terraform code implementation of a centralized internet ingress setup for EKS services hosted in private/separate AWS accounts/VPCs with no public link [(IGW/NAT)](https://docs.aws.amazon.com/network-firewall/latest/developerguide/arch-igw-ngw.html) attached.
 
 
 ## Solution diagram and data flow
 
 
-The diagram that follows (figure 1) shows how traffic from the internet flows to the services hosted in the Amazon EKS VPC. following these:
+The diagram that follows shows how traffic from the internet flows to the services hosted in the Amazon EKS VPC. following these:
 
-1.	HTTPS requests coming from the internet are resolved by Amazon Route 53 DNS and then directed to the public address of the ALB.
-2.	The ALB terminates the HTTPS traffic using a certificate managed by AWS Certificate Manager.
-3.	Traffic that is permitted to pass through the ALB is then logged in S3.
-4.	Traffic is then reviewed and screened by the AWS Web Application Firewall (WAF) to catch common security exploits. Assuming the HTTP request is permitted by the WAF, traffic is then routed to the ALB targets (VPC Endpoint ENIs).
+1.	HTTPS requests coming from the internet are resolved by [Amazon Route 53 DNS](https://aws.amazon.com/route53/) and then directed to the public address of the [ALB](https://docs.aws.amazon.com/elasticloadbalancing/latest/application/introduction.html).
+2.	The ALB terminates the HTTPS traffic using a certificate managed by [AWS Certificate Manager](https://aws.amazon.com/certificate-manager/).
+3.	Traffic that is permitted to pass through the ALB is then logged in [S3](https://aws.amazon.com/s3/).
+4.	Traffic is then reviewed and screened by the [AWS Web Application Firewall (WAF)](https://aws.amazon.com/waf/) to catch common security exploits. Assuming the HTTP request is permitted by the WAF, traffic is then routed to the ALB targets (VPC Endpoint ENIs).
 5.	The ALB load balances the traffic against the ENIs defined for the VPC Endpoint.
-6.	Once traffic arrives at the ENIs associated with the VPC Endpoint, the PrivateLink service carries the traffic to the Amazon EKS VPC, where the VPC Endpoint Service maps the traffic to the NLB.
+6.	Once traffic arrives at the ENIs associated with the VPC Endpoint, the [PrivateLink](https://aws.amazon.com/privatelink/?privatelink-blogs.sort-by=item.additionalFields.createdDate&privatelink-blogs.sort-order=desc) service carries the traffic to the Amazon EKS VPC, where the VPC Endpoint Service maps the traffic to the NLB.
 7.	The NLB, with HTTP targets defined in the Amazon EKS cluster, delivers the HTTP traffic to the service hosted on the pods running in the Amazon EKS cluster.
-8.	All ALB and Amazon EKS logs are logged in Amazon CloudWatch.
+8.	All ALB and Amazon EKS logs are logged in [Amazon CloudWatch](https://aws.amazon.com/cloudwatch/).
 
 
 ![image](./.docs/central_alb_ingress_eks.jpg)
