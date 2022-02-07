@@ -46,7 +46,7 @@ The diagram that follows (figure 1) shows how traffic from the internet flows to
 7.	The NLB, with HTTP targets defined in the Amazon EKS cluster, delivers the HTTP traffic to the service hosted on the pods running in the Amazon EKS cluster.
 8.	All ALB and Amazon EKS logs are logged in Amazon CloudWatch.
 
-<img src="https://github.com/omehussa/aws-central-alb-ingress-for-private-eks-terraform/blob/main/.docs/central_alb_ingress_private_eks.jpg" width="500" height="600">
+<img src="https://github.com/omehussa/aws-central-alb-ingress-for-private-eks-terraform/blob/main/.docs/central_alb_ingress_private_eks.jpg" width="400" height="500">
 
 
 ![image](./.docs/central_alb_ingress_private_eks.jpg)
