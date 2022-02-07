@@ -2,7 +2,7 @@
 
 This repository contains Terraform code implementation of a centralized internet ingress setup for EKS services hosted in private/separate AWS accounts with no public link (IGW/NAT) attached.
 
-### Solution overview
+## Solution overview
 
 We deployed our solution into two VPCs connected using AWS PrivateLink. One VPC hosts the Amazon EKS cluster, and the second hosts the ALB. We refer to these as the “Amazon EKS VPC” and the “internet VPC” respectively.
 
@@ -32,7 +32,7 @@ We deployed the ALB with a listener on the public (internet-facing) interface th
 
 
 
-### Solution diagram and data flow
+## Solution diagram and data flow
 
 
 The diagram that follows (figure 1) shows how traffic from the internet flows to the services hosted in the Amazon EKS VPC. following these:
