@@ -212,7 +212,7 @@ terraform plan
 terraform apply -auto-approve
 ```
 
-### Setup eks-service-account
+### Setup central-internet-account
 
 #### 1. Create terraform state bucket for this account by running this command in terminal:
 
